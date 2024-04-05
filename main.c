@@ -1,3 +1,9 @@
+/*Se va actualiza functionalitatea programului in asa fel incat acesta sa primeascã un numär nespecificat de argumente in linia de comandã, dar nu mai mult de 10, cu mentinea ca niciun argument nu se va repeta.
+Programul va procesa numai directoarele, alte tipuri de argumente vor fi ignorate. Logica de captur a metadatelor se va aplica acum tuturor argumentelor primite valide, ceea ce inseamna că programul va actualiza snapshot-urile pentru toate directorele specificate de utilizator.
+* In cazul in care se vor inregistra modificari la nivelul directoarelor, utilizatorul va putea sã compare snapshot-ul anterior al directorului specificat cu cel curent. In cazul in care exist diferente intre cele doua snapshot-uri, snapshot-ul vechi va fi actualizat cu noile informatii din snapshot-ul curent.
+* Functionalitate codului va fi extins astfel incât programul sã primeasca un argument suplimentar, care va reprezenta directorul de iesire in care vor fi stocate toate snapshot-urile inträrilor din directorele specificate in linia de comandã. Acest director de iesire va fi specificat folosind optiunea
+*-0. De exemplu, comanda de rulare a programului va fi: program _exe -o output input1 input2....*/
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -9,117 +15,99 @@
 #include <ctype.h>
 #include <fcntl.h>
 
+void checkDir(char *path, char *outputDir) {
+    DIR *dir;
+    struct dirent *entry;
+    struct stat file_info;
+    char pathaux[1000];
 
-void checkDir(DIR *dir, char path[1000], int k)
-{
-	struct dirent* entry;
-	while((entry=readdir(dir))!=NULL)
-	{
-		if(strcmp(entry->d_name, ".")==0 || strcmp(entry->d_name, "..")==0 )
-		{
-			continue;
-		}
-		struct stat file_info;
-		
-		char pathaux[1000];
-		strcpy(pathaux, path);
-		strcat(pathaux, "/");
-		strcat(pathaux, entry->d_name);
-		
-		for(int i=0;i<k;i++)
-		{
-			printf("\t");
-		}
-		printf("--->%s\n", entry->d_name);
-		
-		stat(pathaux, &file_info);
-		if(S_ISDIR(file_info.st_mode))
-		{
-			//printf("e director\n\n");
-			DIR *d=opendir(pathaux);
-			if(d==NULL)
-			{
-				exit(-7);
-			}
-			checkDir(d, pathaux,k+1);
-		}
-		else
-		{
-			if(S_ISREG(file_info.st_mode))
-			{
-				
-				
-				if(strstr(entry->d_name, "_snapshot.txt"))
-				{
-					continue;
-				}
-				
-				char numefis[100];
-				strcpy(numefis, entry->d_name);
-				
-				char *aux=strtok(numefis, ".txt");
-				strcpy(numefis, aux);
-				
-				strcat(numefis, "_snapshot.txt");
-				
-				char new_path[1000];
-				strcpy(new_path, path);
-				strcat(new_path,"/");
-				strcat(new_path, numefis);
-				
-				//printf("%s\n\n", new_path);
-				
-				
-				int file=open(new_path, O_CREAT  |O_RDWR, S_IWUSR| S_IRUSR);
-				if(file==-1)
-				{
-					printf("ba nujuu\n");
-					exit(-13);
-				}
-				
-				printf( "dimensiune: %ld\n", file_info.st_size);
-				
-				
-				char buffer[500]="dimensiune::";
-				printf("%s\n", buffer);
-				
-				//char conversie[35];
-				//ltoa(file_info.st_size, conversie, 10);
-				//printf("%s\n", conversie);
-				
-				//strcat(buffer, (char*)file_info.st_ino);
-				printf("%s\n", buffer);
-				strcat(buffer,"bytes\n");
-				//write(file,buffer,strlen(buffer));
-			}
-		}
-	}
+    if ((dir = opendir(path)) == NULL) {
+        perror("opendir");
+        return;
+    }
 
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
 
+        strcpy(pathaux, path);
+        strcat(pathaux, "/");
+        strcat(pathaux, entry->d_name);
+
+        if (stat(pathaux, &file_info) == -1) {
+            perror("stat");
+            continue;
+        }
+
+        if (S_ISDIR(file_info.st_mode)) {
+            checkDir(pathaux, outputDir);
+        } else {
+            // TODO
+			printf("File: %s\n", pathaux);
+        }
+    }
+
+    closedir(dir);
 }
 
+void takeSnapshot(char *dirPath, char *outputDir) {
+    DIR *dir;
+    struct dirent *entry;
+    char snapshotPath[1024];
+    FILE *snapshotFile;
 
+    // Open the directory
+    if ((dir = opendir(dirPath)) == NULL) {
+        perror("opendir");
+        return;
+    }
 
-int main(int argc, char ** argv)
-{
-	if(argc!=2)
-	{
-		exit(-3);
-	}
-	
-	DIR *dir;
-	dir=opendir(argv[1]);
-	if(dir==NULL)
-	{
-		exit(-4);
-	}
-	
-	
-	printf("%s\n", argv[1]);
-	char path[1000]="";
-	strcpy(path, argv[1]);
-	checkDir(dir, path,1);
-	
-	
-	
+    // Create the snapshot file path
+    snprintf(snapshotPath, sizeof(snapshotPath), "%s/%s_snapshot.txt", outputDir, dirPath);
+
+    // Open the snapshot file
+    snapshotFile = fopen(snapshotPath, "w");
+    if (snapshotFile == NULL) {
+        perror("fopen");
+        return;
+    }
+
+    // Write the names of all files and subdirectories to the snapshot file
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            fprintf(snapshotFile, "%s\n", entry->d_name);
+        }
+    }
+
+    // Close the snapshot file and the directory
+    fclose(snapshotFile);
+    closedir(dir);
+}
+
+int main(int argc, char *argv[]) {
+    char *outputDir = NULL;
+    int i;
+
+    if (argc > 11) {
+        fprintf(stderr, "Too many arguments. Maximum is 10.\n");
+        return 1;
+    }
+
+    for (i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-o") == 0) {
+            if (i + 1 < argc) {
+                outputDir = argv[++i];
+            } else {
+                fprintf(stderr, "Missing output directory after -o option.\n");
+                return 1;
+            }
+        } else {
+            checkDir(argv[i], outputDir);
+        }
+    }
+
+	takeSnapshot(argv[i], outputDir);
+
+    return 0;
 }
