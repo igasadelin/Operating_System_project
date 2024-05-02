@@ -54,8 +54,17 @@ void checkDir(char *path, char *outputDir) {
 void takeSnapshot(char *dirPath, char *outputDir) {
     DIR *dir;
     struct dirent *entry;
-    char snapshotPath[1024];
+    char snapshotPath[2048];
     FILE *snapshotFile;
+
+    // Check if dirPath is not NULL before using it
+    if (dirPath == NULL) {
+        fprintf(stderr, "dirPath is NULL\n");
+        return;
+    }
+
+    // Make sure dirPath is null-terminated
+    dirPath[1023] = '\0';
 
     // Open the directory
     if ((dir = opendir(dirPath)) == NULL) {
@@ -94,20 +103,31 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    for (i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-o") == 0) {
-            if (i + 1 < argc) {
-                outputDir = argv[++i];
-            } else {
-                fprintf(stderr, "Missing output directory after -o option.\n");
-                return 1;
-            }
+    char **directories = NULL;
+int dirCount = 0;
+
+for (i = 1; i < argc; i++) {
+    if (strcmp(argv[i], "-o") == 0) {
+        if (i + 1 < argc) {
+            outputDir = argv[++i];
         } else {
-            checkDir(argv[i], outputDir);
+            fprintf(stderr, "Missing output directory after -o option.\n");
+            return 1;
+        }
+    } else {
+        // Resize the directories array
+        directories = realloc(directories, sizeof(char *) * (dirCount + 1));
+        if (directories == NULL) {
+            fprintf(stderr, "Failed to allocate memory for directories array.\n");
+            return 1;
+        }
+
+        // Store the directory
+        directories[dirCount] = argv[i];
+        dirCount++;
+
+        checkDir(argv[i], outputDir);
         }
     }
-
-	takeSnapshot(argv[i], outputDir);
-
     return 0;
 }
