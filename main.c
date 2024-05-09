@@ -14,6 +14,68 @@ Programul va procesa numai directoarele, alte tipuri de argumente vor fi ignorat
 #include <string.h>
 #include <ctype.h>
 #include <fcntl.h>
+#include <time.h>
+#include <sys/wait.h>
+
+
+void takeSnapshot(char *dirPath, char *outputDir, char * pathaux, struct dirent *entry) {
+    char snapshotName[1000];
+    strcpy(snapshotName, strtok(entry->d_name, "."));  
+    strcat(snapshotName, "_snapshot.txt");
+
+    char snapshotPath[1000];
+    strcpy(snapshotPath, outputDir);
+    strcat(snapshotPath, "/");
+    strcat(snapshotPath, snapshotName);
+
+    int snapshotFile = open(snapshotPath, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
+    printf("%s    ",snapshotPath);
+    struct stat fileStat;
+
+    if (stat(pathaux, &fileStat) == -1) 
+	{
+		exit(-10);
+	}
+
+    time_t current_time = time(NULL); // Obține timpul curent
+	char *ora = ctime(&current_time);
+
+	write(snapshotFile, "Timestamp: ", strlen("Timestamp: "));
+	write(snapshotFile, ora, strlen(ora));	
+	
+	write(snapshotFile, "Entry: ", 7);
+	write(snapshotFile, entry->d_name,strlen(entry->d_name));
+	write(snapshotFile, "\n", 1);
+	
+	write(snapshotFile, "Last Modified: ",strlen("Last Modified: "));
+	write(snapshotFile, ctime(&fileStat.st_mtime), strlen(ctime(&fileStat.st_mtime)));		//multumesc chat gpt
+	
+	write(snapshotFile, "Size: ", strlen("Size: "));
+	char file_size[20];
+	//printf("File size: %ld bytes\n", fileStat.st_size);
+	sprintf(file_size,"%lld",fileStat.st_size);
+	write(snapshotFile, file_size, strlen(file_size));
+	write(snapshotFile, " bytes\n", strlen(" bytes\n"));
+	
+	write(snapshotFile, "Permissions: ",strlen("Permissions: "));
+	write(snapshotFile, ((S_ISDIR(fileStat.st_mode)) ? "d" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IRUSR) ? "r" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IWUSR) ? "w" : "-"),1);	
+	write(snapshotFile, ((fileStat.st_mode & S_IXUSR) ? "x" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IRGRP) ? "r" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IWGRP) ? "w" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IXGRP) ? "x" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IROTH) ? "r" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IWOTH) ? "w" : "-"),1);
+	write(snapshotFile, ((fileStat.st_mode & S_IXOTH) ? "x" : "-"),1);
+	
+	char file_inode[20];
+	sprintf(file_inode,"%llu",entry->d_ino);
+	//printf("%s  ", file_inode);
+	write(snapshotFile, "\nInode no: ", strlen("\nInode no: "));
+	write(snapshotFile,file_inode,strlen(file_inode));
+
+}
 
 void checkDir(char *path, char *outputDir) {
     DIR *dir;
@@ -25,7 +87,6 @@ void checkDir(char *path, char *outputDir) {
         perror("opendir");
         return;
     }
-
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -44,90 +105,39 @@ void checkDir(char *path, char *outputDir) {
             checkDir(pathaux, outputDir);
         } else {
             // TODO
-			printf("File: %s\n", pathaux);
+            if (S_ISREG(file_info.st_mode)){
+                if(strstr(entry->d_name,"_snapshot"))
+                    continue;
+			    printf("File: %s\n", pathaux);
+               takeSnapshot(pathaux, outputDir, pathaux, entry);
+            }
         }
     }
 
-    closedir(dir);
-}
-
-void takeSnapshot(char *dirPath, char *outputDir) {
-    DIR *dir;
-    struct dirent *entry;
-    char snapshotPath[2048];
-    FILE *snapshotFile;
-
-    // Check if dirPath is not NULL before using it
-    if (dirPath == NULL) {
-        fprintf(stderr, "dirPath is NULL\n");
-        return;
-    }
-
-    // Make sure dirPath is null-terminated
-    dirPath[1023] = '\0';
-
-    // Open the directory
-    if ((dir = opendir(dirPath)) == NULL) {
-        perror("opendir");
-        return;
-    }
-
-    // Create the snapshot file path
-    snprintf(snapshotPath, sizeof(snapshotPath), "%s/%s_snapshot.txt", outputDir, dirPath);
-
-    // Open the snapshot file
-    snapshotFile = fopen(snapshotPath, "w");
-    if (snapshotFile == NULL) {
-        perror("fopen");
-        return;
-    }
-
-    // Write the names of all files and subdirectories to the snapshot file
-    while ((entry = readdir(dir)) != NULL) {
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            fprintf(snapshotFile, "%s\n", entry->d_name);
-        }
-    }
-
-    // Close the snapshot file and the directory
-    fclose(snapshotFile);
     closedir(dir);
 }
 
 int main(int argc, char *argv[]) {
-    char *outputDir = NULL;
-    int i;
-
-    if (argc > 11) {
-        fprintf(stderr, "Too many arguments. Maximum is 10.\n");
+    if (argc < 4)
+	{
+		printf("TO DO\n");
         return 1;
-    }
+	}
+	
+	if (strcmp(argv[1],"-o")!=0)
+	{
+		printf("TO DO");
+        return 1;
+	}
 
-    char **directories = NULL;
-int dirCount = 0;
+    // if (argc > 11) {
+    //     fprintf(stderr, "Too many arguments. Maximum is 10.\n");
+    //     return 1;
+    // }
 
-for (i = 1; i < argc; i++) {
-    if (strcmp(argv[i], "-o") == 0) {
-        if (i + 1 < argc) {
-            outputDir = argv[++i];
-        } else {
-            fprintf(stderr, "Missing output directory after -o option.\n");
-            return 1;
-        }
-    } else {
-        // Resize the directories array
-        directories = realloc(directories, sizeof(char *) * (dirCount + 1));
-        if (directories == NULL) {
-            fprintf(stderr, "Failed to allocate memory for directories array.\n");
-            return 1;
-        }
 
-        // Store the directory
-        directories[dirCount] = argv[i];
-        dirCount++;
-
-        checkDir(argv[i], outputDir);
-        }
+    for (int i = 3; i < argc; i++) {
+        checkDir(argv[i], argv[2]);
     }
     return 0;
 }
