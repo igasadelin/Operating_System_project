@@ -1,0 +1,2 @@
+gcc -Wall -o main main.c  
+sudo ./main -o outputDir -s izolare test1 test2 test3 
