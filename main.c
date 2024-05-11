@@ -1,9 +1,3 @@
-/*Se va actualiza functionalitatea programului in asa fel incat acesta sa primeascã un numär nespecificat de argumente in linia de comandã, dar nu mai mult de 10, cu mentinea ca niciun argument nu se va repeta.
-Programul va procesa numai directoarele, alte tipuri de argumente vor fi ignorate. Logica de captur a metadatelor se va aplica acum tuturor argumentelor primite valide, ceea ce inseamna că programul va actualiza snapshot-urile pentru toate directorele specificate de utilizator.
-* In cazul in care se vor inregistra modificari la nivelul directoarelor, utilizatorul va putea sã compare snapshot-ul anterior al directorului specificat cu cel curent. In cazul in care exist diferente intre cele doua snapshot-uri, snapshot-ul vechi va fi actualizat cu noile informatii din snapshot-ul curent.
-* Functionalitate codului va fi extins astfel incât programul sã primeasca un argument suplimentar, care va reprezenta directorul de iesire in care vor fi stocate toate snapshot-urile inträrilor din directorele specificate in linia de comandã. Acest director de iesire va fi specificat folosind optiunea
-*-0. De exemplu, comanda de rulare a programului va fi: program _exe -o output input1 input2....*/
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <dirent.h>
@@ -48,7 +42,7 @@ void takeSnapshot(char *dirPath, char *outputDir, char * pathaux, struct dirent 
 	write(snapshotFile, "\n", 1);
 	
 	write(snapshotFile, "Last Modified: ",strlen("Last Modified: "));
-	write(snapshotFile, ctime(&fileStat.st_mtime), strlen(ctime(&fileStat.st_mtime)));		//multumesc chat gpt
+	write(snapshotFile, ctime(&fileStat.st_mtime), strlen(ctime(&fileStat.st_mtime)));
 	
 	write(snapshotFile, "Size: ", strlen("Size: "));
 	char file_size[20];
@@ -84,9 +78,10 @@ void checkDir(char *path, char *outputDir) {
     char pathaux[1000];
 
     if ((dir = opendir(path)) == NULL) {
-        perror("opendir");
+        perror("OpernDir Error!\n");
         return;
     }
+
     while ((entry = readdir(dir)) != NULL) {
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
@@ -97,7 +92,7 @@ void checkDir(char *path, char *outputDir) {
         strcat(pathaux, entry->d_name);
 
         if (stat(pathaux, &file_info) == -1) {
-            perror("stat");
+            perror("Stat Error!\n");
             continue;
         }
 
@@ -118,26 +113,43 @@ void checkDir(char *path, char *outputDir) {
 }
 
 int main(int argc, char *argv[]) {
-    if (argc < 4)
-	{
-		printf("TO DO\n");
+    if (argc < 4) {
+		printf("Argc Error!\n");
         return 1;
 	}
 	
-	if (strcmp(argv[1],"-o")!=0)
-	{
-		printf("TO DO");
+	if (strcmp(argv[1], "-o") != 0) {
+		printf("String Error!\n");
         return 1;
 	}
 
-    // if (argc > 11) {
-    //     fprintf(stderr, "Too many arguments. Maximum is 10.\n");
-    //     return 1;
-    // }
+    for (int i = 3 ; i < argc ; i++)
+	{	
+		pid_t pid = fork();
+		if (pid == 0){
+			checkDir(argv[i],argv[2]);
+			exit(2);
+		} else if (pid < 0){
+			printf("Fork Error\n");
+			exit(-2);
+		}
+	}
 
+	for (int i = 3; i < argc ; i++){	
+		int status;
+		pid_t pid = waitpid(-1, &status, 0);
 
-    for (int i = 3; i < argc; i++) {
-        checkDir(argv[i], argv[2]);
-    }
+		if (pid < 0) {
+			printf("Waiting Error!\n");
+			exit(-2);
+		}
+
+		if (WIFEXITED(status)){
+			printf("Process %d has ended with status %d\n", pid, WEXITSTATUS(status));
+		} else {
+			printf("eroare incheiere proces\n");
+		}
+	}
+    
     return 0;
 }
