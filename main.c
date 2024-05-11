@@ -11,24 +11,13 @@
 #include <time.h>
 #include <sys/wait.h>
 
-
-void takeSnapshot(char *dirPath, char *outputDir, char * pathaux, struct dirent *entry) {
-    char snapshotName[1000];
-    strcpy(snapshotName, strtok(entry->d_name, "."));  
-    strcat(snapshotName, "_snapshot.txt");
-
-    char snapshotPath[1000];
-    strcpy(snapshotPath, outputDir);
-    strcat(snapshotPath, "/");
-    strcat(snapshotPath, snapshotName);
-
+void writeSnapshot(char* dirPath, char* snapshotPath, struct dirent *entry) {
     int snapshotFile = open(snapshotPath, O_RDWR | O_CREAT, S_IWUSR | S_IRUSR);
     printf("%s    ",snapshotPath);
     struct stat fileStat;
 
-    if (stat(pathaux, &fileStat) == -1) 
-	{
-		exit(-10);
+    if (stat(dirPath, &fileStat) == -1) {
+		return;
 	}
 
     time_t current_time = time(NULL); // Obține timpul curent
@@ -68,14 +57,76 @@ void takeSnapshot(char *dirPath, char *outputDir, char * pathaux, struct dirent 
 	//printf("%s  ", file_inode);
 	write(snapshotFile, "\nInode no: ", strlen("\nInode no: "));
 	write(snapshotFile,file_inode,strlen(file_inode));
+}
 
+void takeSnapshot(char *dirPath, char *outputDir, struct dirent *entry) {               //functie care scrie in fisierul snapshot
+    char snapshotName[1000];
+    strcpy(snapshotName, strtok(entry->d_name, "."));  
+    strcat(snapshotName, "_snapshot.txt");
+
+    char snapshotPath[1000];
+    strcpy(snapshotPath, outputDir);
+    strcat(snapshotPath, "/");
+    strcat(snapshotPath, snapshotName);
+
+    writeSnapshot(dirPath,snapshotPath,entry);
+}
+
+void verificare_snapshot(char *path,char* dirPath,struct dirent* entry, char* outputDir) {
+	char tmpPath[1000];		//pt verif dintre fisiere
+	strcpy (tmpPath,path);
+	strcat(tmpPath,"/");
+	strcat(tmpPath,"tmp.txt");		//path fisier temporar
+			
+    writeSnapshot(dirPath,tmpPath,entry);
+    
+    char snapshotName[1000];
+    strcpy(snapshotName, strtok(entry->d_name, "."));  
+    strcat(snapshotName, "_snapshot.txt");
+
+    char snapshotPath[1000];
+    strcpy(snapshotPath, outputDir);
+    strcat(snapshotPath, "/");
+    strcat(snapshotPath, snapshotName);
+	int snapshotOpen=open( snapshotPath, O_RDWR , S_IWUSR | S_IRUSR);
+	int tmpOpen=open(tmpPath, O_RDWR , S_IWUSR | S_IRUSR);		
+	
+    lseek(snapshotOpen,0,SEEK_SET);         //muta cursorul la inceputul fisierului
+	lseek(tmpOpen,0,SEEK_SET);					
+		
+	char c_tmp='a',c_snapshot='a';
+	while(c_tmp!='\n')	{
+		read(tmpOpen,&c_tmp, sizeof(char));
+	}
+	while(c_snapshot!='\n')	{
+		read(snapshotOpen,&c_snapshot, sizeof(char));
+	}								//sarim peste linia cu timpul curent
+					
+	int ok=1;
+	while((read(tmpOpen,&c_tmp, sizeof(char))>0) && (read(snapshotOpen,&c_snapshot, sizeof(char))>0)) {
+		if (c_tmp != c_snapshot) {
+			ok=0;						//cat timp caracerele sunt la fel in ambele fisiere, citim
+			break;
+		}	
+	}
+					
+	if (ok==0) {						//ok este 0 doar daca un caracter nu coincide in ambele fisiere
+		printf("%s -snapshotPath\n%s -tmpPath\n\n",snapshotPath,tmpPath); 		//afiseaza ce schimba
+		remove(snapshotPath);							
+		rename(tmpPath,snapshotPath);					//sterge snapshotul vechi si il inlocuim cu cel nou
+	}
+	else {
+		remove(tmpPath);					//nu s-a schimbat nimic asa ca stergem fisierul temorar
+	}
+	close(snapshotOpen);
+	close(tmpOpen);					//inchidere fisiere
 }
 
 void checkDir(char *path, char *outputDir) {
     DIR *dir;
     struct dirent *entry;
     struct stat file_info;
-    char pathaux[1000];
+    char dirPath[1000];
 
     if ((dir = opendir(path)) == NULL) {
         perror("OpernDir Error!\n");
@@ -87,24 +138,41 @@ void checkDir(char *path, char *outputDir) {
             continue;
         }
 
-        strcpy(pathaux, path);
-        strcat(pathaux, "/");
-        strcat(pathaux, entry->d_name);
+        strcpy(dirPath, path);
+        strcat(dirPath, "/");
+        strcat(dirPath, entry->d_name);
 
-        if (stat(pathaux, &file_info) == -1) {
+        if (stat(dirPath, &file_info) == -1) {
             perror("Stat Error!\n");
             continue;
         }
 
         if (S_ISDIR(file_info.st_mode)) {
-            checkDir(pathaux, outputDir);
+            checkDir(dirPath, outputDir);
         } else {
             // TODO
             if (S_ISREG(file_info.st_mode)){
                 if(strstr(entry->d_name,"_snapshot"))
                     continue;
-			    printf("File: %s\n", pathaux);
-               takeSnapshot(pathaux, outputDir, pathaux, entry);
+                        
+                char snapshotName[1000];
+                strcpy(snapshotName, strtok(entry->d_name, "."));  
+                strcat(snapshotName, "_snapshot.txt");
+
+                char snapshotPath[1000];
+                strcpy(snapshotPath, outputDir);
+                strcat(snapshotPath, "/");
+                strcat(snapshotPath, snapshotName);
+
+                if (access(snapshotPath,F_OK)==-1)		//verific daca exista fisierul. daca nu exista il creez cu  open si scriu in el cu write
+				{				
+					int snapshotOpen=open( snapshotPath,O_RDWR | O_CREAT , S_IWUSR | S_IRUSR);
+					takeSnapshot(dirPath,outputDir, entry);
+					close(snapshotOpen);
+				}
+                else{
+                    verificare_snapshot(path,dirPath,entry,outputDir);
+                }
             }
         }
     }
@@ -113,18 +181,25 @@ void checkDir(char *path, char *outputDir) {
 }
 
 int main(int argc, char *argv[]) {
+    // Verficam sa avem cel putin 4 argumente
     if (argc < 4) {
 		printf("Argc Error!\n");
         return 1;
 	}
+
+    //Verificam sa nu avem mai mult de 10 argumente 
+    if (argc > 12) { 
+        printf("Too many arguments!\n");
+        return 1;
+    }
 	
 	if (strcmp(argv[1], "-o") != 0) {
 		printf("String Error!\n");
         return 1;
 	}
 
-    for (int i = 3 ; i < argc ; i++)
-	{	
+    //Verirficare proceselor copil
+    for (int i = 3 ; i < argc ; i++) {	
 		pid_t pid = fork();
 		if (pid == 0){
 			checkDir(argv[i],argv[2]);
@@ -150,6 +225,6 @@ int main(int argc, char *argv[]) {
 			printf("eroare incheiere proces\n");
 		}
 	}
-    
+
     return 0;
 }
